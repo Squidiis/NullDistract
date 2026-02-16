@@ -117,26 +117,26 @@ async function renderList() {
             e.preventDefault();
             
             const newPausedStatus = !site.paused;
-            site.paused = newPausedStatus;
             
-            if (newPausedStatus === false) { 
-                if (site.type === 'dauer' && site.dauer > 0) {
-                    site.remainingMinutes = site.dauer;
-                }
-            }
-            
-            y
             const allSites = await StorageManager.getSites();
             const index = allSites.findIndex(s => s.id == site.id);
+            
             if (index !== -1) {
-                allSites[index] = site;
+                allSites[index].paused = newPausedStatus;
+                
+                if (newPausedStatus === false) { 
+                    if (allSites[index].type === 'dauer' && allSites[index].dauer > 0) {
+                        allSites[index].remainingMinutes = allSites[index].dauer;
+                    }
+                }
+                
                 await StorageManager.saveSites(allSites);
             }
-            
-            renderList(); 
-            
+    
+            await renderList(); 
             chrome.runtime.sendMessage({ action: "checkRulesNow" });
         };
+
         card.querySelector('.btn-delete-item').onclick = async () => {
             await removeChromeRule(numericId);
             await StorageManager.deleteSite(numericId);
