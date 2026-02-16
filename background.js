@@ -4,8 +4,8 @@ import { isTimeNowInRange } from './js/utils.js';
 
 let isChecking = false;
 
-async function checkAllRules(isAlarmSource = false) {
-    if (isChecking) return;
+async function checkAllRules() {
+    if (isChecking) return; 
     isChecking = true;
 
     try {
@@ -14,28 +14,16 @@ async function checkAllRules(isAlarmSource = false) {
         const existingIds = new Set(existingRules.map(r => r.id));
         
         if (isGlobalActive) {
-            if (!existingIds.has(9999)) {
-                await setGlobalBlock(true);
-            }
-
-            const sites = await StorageManager.getSites();
-            for (const site of sites) {
-                const sId = Math.floor(parseInt(site.id));
-                if (existingIds.has(sId)) {
-                    await removeChromeRule(sId);
-                }
-            }
-            
-            isChecking = false;
+            if (!existingIds.has(9999)) await setGlobalBlock(true);
+            isChecking = false; 
             return; 
-        } else {
-            if (existingIds.has(9999)) {
-                await setGlobalBlock(false);
-            }
+        } else if (existingIds.has(9999)) {
+            await setGlobalBlock(false);
         }
 
         const sites = await StorageManager.getSites();
         let hasChanges = false;
+        const now = Date.now();
 
         for (const site of sites) {
             const sId = Math.floor(parseInt(site.id));
@@ -48,26 +36,24 @@ async function checkAllRules(isAlarmSource = false) {
                     shouldBeBlocked = isTimeNowInRange(site.start, site.end);
                 } 
                 else if (site.type === 'dauer') {
-
-                    if (site.dauer > 0 && (site.remainingMinutes === undefined || site.remainingMinutes === null)) {
-                        site.remainingMinutes = site.dauer;
-                        hasChanges = true;
-                    }
-
-                    if (site.remainingMinutes > 0) {
-                        shouldBeBlocked = true;
-                        if (isAlarmSource) {
-                            site.remainingMinutes -= 1;
-                            hasChanges = true;
+                    if (site.dauer > 0) {
+                        
+                        if (!site.expiry) {
+                            shouldBeBlocked = false; 
+                        } else {
+                            const remaining = site.expiry - now;
+                            if (remaining > 0) {
+                                shouldBeBlocked = true;
+                            } else {
+                                shouldBeBlocked = false;
+                                if (!site.paused) {
+                                    site.paused = true;
+                                    hasChanges = true;
+                                }
+                            }
                         }
-                    } else if (site.dauer > 0) {
-
-                        shouldBeBlocked = false;
-                        site.paused = true; 
-                        hasChanges = true;
                     } else {
-
-                        shouldBeBlocked = true;
+                        shouldBeBlocked = true; 
                     }
                 }
             }
@@ -86,18 +72,25 @@ async function checkAllRules(isAlarmSource = false) {
             chrome.runtime.sendMessage({ action: "uiUpdateRequired" }).catch(() => {});
         }
     } catch (error) {
-        console.error("Fehler im Background-Check:", error);
+        console.error("Kritischer Fehler im Background-Check:", error);
     } finally {
-        isChecking = false;
+        setTimeout(() => { isChecking = false; }, 100);
     }
 }
 
-chrome.runtime.onInstalled.addListener(() => {
-    chrome.alarms.create('checkTimeRules', { periodInMinutes: 1 });
-});
-chrome.alarms.onAlarm.addListener(() => checkAllRules(true));
-chrome.runtime.onMessage.addListener((msg) => {
-    if (msg.action === "checkRulesNow") checkAllRules(false);
+chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === 'checkTimeRules') checkAllRules();
 });
 
-checkAllRules(false);
+chrome.runtime.onInstalled.addListener(() => {
+    chrome.alarms.create('checkTimeRules', { periodInMinutes: 1 });
+    checkAllRules();
+});
+
+chrome.runtime.onMessage.addListener((msg) => {
+    if (msg.action === "checkRulesNow") {
+        checkAllRules();
+    }
+});
+
+checkAllRules();

@@ -14,10 +14,8 @@ const cancelBtn = document.getElementById('cancelEditBtn');
 const globalSwitch = document.getElementById('globalSwitch');
 const themeToggle = document.getElementById('themeToggle');
 
-
 async function init() {
     try {
-
         const theme = await StorageManager.getTheme();
         if (theme === 'dark') {
             document.body.classList.add('dark');
@@ -49,97 +47,109 @@ async function init() {
         await renderList();
         setupFormEvents();
 
+        setInterval(() => renderList(true), 1000);
+
         chrome.runtime.onMessage.addListener((msg) => {
             if (msg.action === "uiUpdateRequired") {
+                window._cachedSites = null; 
                 renderList(); 
             }
         });
     } catch (err) { 
-        console.error("Fehler bei Init:", err); 
+        console.error("Initialization error:", err); 
     }
 }
 
-
-async function renderList() {
+async function renderList(isTick = false) {
     const listElement = document.getElementById('blockList');
     if (!listElement) return;
 
-    const sites = await StorageManager.getSites();
+    if (!isTick || !window._cachedSites) {
+        window._cachedSites = await StorageManager.getSites();
+    }
+    
+    const sites = window._cachedSites;
     listElement.innerHTML = ''; 
 
     sites.forEach(site => {
         const numericId = parseInt(site.id);
-        const card = document.createElement('div');
-        card.setAttribute('data-id', numericId);
+        const now = Date.now();
         
-        const isExpired = site.type === 'dauer' && 
-                         site.dauer > 0 && 
-                         (site.remainingMinutes <= 0) && 
-                         !site.paused; 
-
-        card.className = `blocked-card ${ (site.paused || isExpired) ? 'disabled' : ''}`;
-        
+        let isExpired = false;
         let timeDisplay = "";
+
         if (site.type === 'bereich') {
             timeDisplay = `${site.start} - ${site.end}`;
         } else {
             if (!site.dauer || site.dauer === 0) {
-                timeDisplay = "Dauerhaft gesperrt";
+                timeDisplay = "Permanently Blocked";
             } else {
                 const limitStr = formatMinutes(site.dauer);
-                const remaining = site.remainingMinutes ?? site.dauer;
+                const remainingMs = (site.expiry || 0) - now;
                 
                 if (site.paused) {
-                    timeDisplay = `Limit: ${limitStr} (Inaktiv)`;
-                } else if (remaining <= 0) {
-                    timeDisplay = `Limit: ${limitStr} | Abgelaufen`;
+                    timeDisplay = `Limit: ${limitStr} (Inactive)`;
+                } else if (remainingMs <= 0) {
+                    timeDisplay = `Limit: ${limitStr} | Expired`;
+                    isExpired = true;
                 } else {
-                    timeDisplay = `Limit: ${limitStr} | ${formatMinutes(remaining)} übrig`;
+                    const totalSecs = Math.floor(remainingMs / 1000);
+                    const m = Math.floor(totalSecs / 60);
+                    const s = totalSecs % 60;
+                    timeDisplay = `Limit: ${limitStr} | ${m}:${s.toString().padStart(2, '0')} left`;
                 }
             }
         }
 
+        const isButtonActive = !site.paused && !isExpired;
+
+        const card = document.createElement('div');
+        card.className = `blocked-card ${(site.paused || isExpired) ? 'disabled' : ''}`;
+
         card.innerHTML = `
             <div class="card-left">
-                <button class="switch-btn ${site.paused ? '' : 'active'}" aria-label="Aktivieren/Deaktivieren"></button>
+                <button class="switch-btn ${isButtonActive ? 'active' : ''}" aria-label="Toggle"></button>
                 <div class="blocked-info">
                     <span class="url">${site.url}</span>
                     <span class="time-left"><span class="icon icon-clock"></span> ${timeDisplay}</span>
                 </div>
             </div>
             <div class="actions">
-                <button class="action-btn btn-edit-item"><span class="icon icon-edit"></span></button>
-                <button class="action-btn btn-delete-item"><span class="icon icon-close"></span></button>
+                <button class="action-btn btn-edit-item" title="Edit"><span class="icon icon-edit"></span></button>
+                <button class="action-btn btn-delete-item" title="Delete"><span class="icon icon-close"></span></button>
             </div>
         `;
 
-        card.querySelector('.switch-btn').onclick = async (e) => {
-            e.preventDefault();
-            
-            const newPausedStatus = !site.paused;
-            
+        card.querySelector('.switch-btn').onclick = async () => {
             const allSites = await StorageManager.getSites();
-            const index = allSites.findIndex(s => s.id == site.id);
+            const idx = allSites.findIndex(s => s.id == site.id);
             
-            if (index !== -1) {
-                allSites[index].paused = newPausedStatus;
-                
-                if (newPausedStatus === false) { 
-                    if (allSites[index].type === 'dauer' && allSites[index].dauer > 0) {
-                        allSites[index].remainingMinutes = allSites[index].dauer;
+            if (idx !== -1) {
+                const item = allSites[idx];
+                const now = Date.now();
+
+                const isExpiredNow = item.type === 'dauer' && item.dauer > 0 && (item.expiry || 0) <= (now + 1000);
+
+                if (item.paused || isExpiredNow) {
+                    item.paused = false;
+                    if (item.type === 'dauer' && item.dauer > 0) {
+                        item.expiry = Date.now() + (item.dauer * 60 * 1000);
                     }
+                } else {
+                    item.paused = true;
                 }
-                
+
                 await StorageManager.saveSites(allSites);
+                window._cachedSites = allSites; 
+                renderList(true);
+                chrome.runtime.sendMessage({ action: "checkRulesNow" });
             }
-    
-            await renderList(); 
-            chrome.runtime.sendMessage({ action: "checkRulesNow" });
         };
 
         card.querySelector('.btn-delete-item').onclick = async () => {
             await removeChromeRule(numericId);
             await StorageManager.deleteSite(numericId);
+            window._cachedSites = null;
             chrome.runtime.sendMessage({ action: "checkRulesNow" });
             renderList();
         };
@@ -149,7 +159,6 @@ async function renderList() {
     });
 }
 
-
 async function handleSave() {
     const url = cleanUrl(urlInput.value);
     if (!url) { urlInput.focus(); return; }
@@ -157,20 +166,21 @@ async function handleSave() {
     const isDauerView = document.getElementById('btnDauer').classList.contains('active');
     const h = parseInt(hoursInput.value || 0);
     const m = parseInt(minutesInput.value || 0);
-    const gesamtMinuten = (h * 60) + m;
+    const totalMinutes = (h * 60) + m;
 
     const data = {
         id: editModeId || Date.now(),
         url,
         type: isDauerView ? 'dauer' : 'bereich',
         paused: false,
-        dauer: (isDauerView && gesamtMinuten > 0) ? gesamtMinuten : 0, 
-        remainingMinutes: (isDauerView && gesamtMinuten > 0) ? gesamtMinuten : null,
+        dauer: (isDauerView && totalMinutes > 0) ? totalMinutes : 0, 
+        expiry: (isDauerView && totalMinutes > 0) ? (Date.now() + totalMinutes * 60 * 1000) : null,
         start: startTimeInput.value,
         end: endTimeInput.value
     };
 
     await StorageManager.saveSite(data, editModeId);
+    window._cachedSites = null; 
     chrome.runtime.sendMessage({ action: "checkRulesNow" });
     exitEditMode();
     renderList();
@@ -209,7 +219,7 @@ function enterEditMode(site) {
         startTimeInput.value = site.start;
         endTimeInput.value = site.end;
     }
-    addBtn.innerText = "Aktualisieren";
+    addBtn.innerText = "Update Rule";
     cancelBtn.style.display = "block";
     urlInput.focus();
 }
@@ -221,7 +231,7 @@ function exitEditMode() {
     minutesInput.value = '';
     startTimeInput.value = '';
     endTimeInput.value = '';
-    addBtn.innerText = "Website blockieren";
+    addBtn.innerText = "Block Website";
     cancelBtn.style.display = "none";
 }
 
