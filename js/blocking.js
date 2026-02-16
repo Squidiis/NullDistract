@@ -7,12 +7,9 @@ export async function updateChromeRules(id, url) {
     if (!domain || isNaN(numericId)) return;
 
     try {
-
-        const existingRules = await chrome.declarativeNetRequest.getDynamicRules();
-        if (existingRules.some(r => r.id === numericId)) return;
-
+        
         await chrome.declarativeNetRequest.updateDynamicRules({
-            removeRuleIds: [numericId],
+            removeRuleIds: [numericId], 
             addRules: [{
                 "id": numericId,
                 "priority": 3000,
@@ -27,7 +24,7 @@ export async function updateChromeRules(id, url) {
         if (chrome.browsingData) {
             try {
                 await chrome.browsingData.remove({
-                    "origins": [`https://${domain}`, `https://www.${domain}`]
+                    "origins": [`https://${domain}`, `http://${domain}`]
                 }, { "serviceWorkers": true, "cacheStorage": true });
             } catch (e) {}
         }
@@ -38,26 +35,50 @@ export async function updateChromeRules(id, url) {
                 chrome.tabs.reload(tab.id, { bypassCache: true }).catch(() => {});
             }
         }
-    } catch (e) { console.error("Fehler Blocking:", e); }
+    } catch (e) { 
+        console.error("Fehler Blocking:", e); 
+    }
 }
 
 export async function removeChromeRule(id, url = null) {
     const numericId = Math.floor(parseInt(id));
     if (isNaN(numericId)) return;
     try {
-        await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: [numericId] });
-    } catch (e) { console.error("Fehler beim Entfernen:", e); }
+        await chrome.declarativeNetRequest.updateDynamicRules({ 
+            removeRuleIds: [numericId] 
+        });
+
+        if (url) {
+            let domain = url.trim().toLowerCase()
+                .replace(/^(?:https?:\/\/)?(?:www\.)?/i, "")
+                .split('/')[0];
+            
+            if (chrome.browsingData) {
+                await chrome.browsingData.remove({
+                    "origins": [`https://${domain}`, `http://${domain}`]
+                }, { 
+                    "serviceWorkers": true, 
+                    "cacheStorage": true, 
+                    "indexedDB": true 
+                });
+            }
+
+            const tabs = await chrome.tabs.query({});
+            for (const tab of tabs) {
+                if (tab.url && tab.url.toLowerCase().includes(domain)) {
+                    chrome.tabs.reload(tab.id, { bypassCache: true }).catch(() => {});
+                }
+            }
+        }
+    } catch (e) { 
+        console.error("Fehler beim Entfernen:", e); 
+    }
 }
 
 export async function setGlobalBlock(active) {
     const GLOBAL_ID = 9999;
     
-    const existingRules = await chrome.declarativeNetRequest.getDynamicRules();
-    const isAlreadyActive = existingRules.some(r => r.id === GLOBAL_ID);
-
     if (active) {
-        if (isAlreadyActive) return; 
-
         await chrome.declarativeNetRequest.updateDynamicRules({
             removeRuleIds: [GLOBAL_ID],
             addRules: [{
@@ -80,7 +101,8 @@ export async function setGlobalBlock(active) {
             }
         }
     } else {
-        if (!isAlreadyActive) return; 
-        await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: [GLOBAL_ID] });
+        await chrome.declarativeNetRequest.updateDynamicRules({ 
+            removeRuleIds: [GLOBAL_ID] 
+        });
     }
 }

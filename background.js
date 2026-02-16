@@ -15,18 +15,20 @@ async function checkAllRules() {
         
         if (isGlobalActive) {
             if (!existingIds.has(9999)) await setGlobalBlock(true);
-            isChecking = false; 
+            isChecking = false;
             return; 
         } else if (existingIds.has(9999)) {
             await setGlobalBlock(false);
+            
         }
 
         const sites = await StorageManager.getSites();
-        let hasChanges = false;
         const now = Date.now();
+        
+        const idsThatShouldBeActive = new Set();
 
         for (const site of sites) {
-            const sId = Math.floor(parseInt(site.id));
+            const sId = Math.floor(Number(site.id));
             if (isNaN(sId) || sId === 9999) continue;
 
             let shouldBeBlocked = false;
@@ -37,60 +39,57 @@ async function checkAllRules() {
                 } 
                 else if (site.type === 'dauer') {
                     if (site.dauer > 0) {
-                        
-                        if (!site.expiry) {
-                            shouldBeBlocked = false; 
-                        } else {
-                            const remaining = site.expiry - now;
-                            if (remaining > 0) {
-                                shouldBeBlocked = true;
-                            } else {
-                                shouldBeBlocked = false;
-                                if (!site.paused) {
-                                    site.paused = true;
-                                    hasChanges = true;
-                                }
-                            }
-                        }
+                        shouldBeBlocked = !!(site.expiry && site.expiry > now);
                     } else {
                         shouldBeBlocked = true; 
                     }
                 }
             }
 
-            const isCurrentlyBlocked = existingIds.has(sId);
+            if (shouldBeBlocked) {
+                idsThatShouldBeActive.add(sId);
+                if (!existingIds.has(sId)) {
+                    await updateChromeRules(sId, site.url);
+                }
+            }
+        }
+        
+        for (const ruleId of existingIds) {
+            if (ruleId === 9999) continue; 
 
-            if (shouldBeBlocked && !isCurrentlyBlocked) {
-                await updateChromeRules(sId, site.url);
-            } else if (!shouldBeBlocked && isCurrentlyBlocked) {
-                await removeChromeRule(sId);
+            if (!idsThatShouldBeActive.has(ruleId)) {
+                console.warn(`Lösche hängende Regel ID: ${ruleId}`);
+                await removeChromeRule(ruleId); 
             }
         }
 
-        if (hasChanges) {
-            await StorageManager.saveSites(sites);
-            chrome.runtime.sendMessage({ action: "uiUpdateRequired" }).catch(() => {});
-        }
     } catch (error) {
-        console.error("Kritischer Fehler im Background-Check:", error);
+        console.error("Fehler im Background-Check:", error);
     } finally {
-        setTimeout(() => { isChecking = false; }, 100);
+        isChecking = false;
     }
 }
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    if (msg.action === "checkRulesNow") {
+        checkAllRules().then(() => {
+            if (sendResponse) sendResponse({status: "sync_complete"});
+        });
+        return true; 
+    }
+});
 
 chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === 'checkTimeRules') checkAllRules();
 });
 
+
+chrome.tabs.onActivated.addListener(() => checkAllRules());
+chrome.windows.onFocusChanged.addListener(() => checkAllRules());
+
 chrome.runtime.onInstalled.addListener(() => {
     chrome.alarms.create('checkTimeRules', { periodInMinutes: 1 });
     checkAllRules();
-});
-
-chrome.runtime.onMessage.addListener((msg) => {
-    if (msg.action === "checkRulesNow") {
-        checkAllRules();
-    }
 });
 
 checkAllRules();

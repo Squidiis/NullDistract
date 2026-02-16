@@ -120,15 +120,17 @@ async function renderList(isTick = false) {
             </div>
         `;
 
-        card.querySelector('.switch-btn').onclick = async () => {
+        card.querySelector('.switch-btn').onclick = async (e) => {
+            if (e.target.disabled) return;
+            e.target.disabled = true;
+
             const allSites = await StorageManager.getSites();
             const idx = allSites.findIndex(s => s.id == site.id);
             
             if (idx !== -1) {
                 const item = allSites[idx];
                 const now = Date.now();
-
-                const isExpiredNow = item.type === 'dauer' && item.dauer > 0 && (item.expiry || 0) <= (now + 1000);
+                const isExpiredNow = item.type === 'dauer' && item.dauer > 0 && (item.expiry || 0) <= now;
 
                 if (item.paused || isExpiredNow) {
                     item.paused = false;
@@ -140,9 +142,13 @@ async function renderList(isTick = false) {
                 }
 
                 await StorageManager.saveSites(allSites);
-                window._cachedSites = allSites; 
-                renderList(true);
-                chrome.runtime.sendMessage({ action: "checkRulesNow" });
+                
+                window._cachedSites = null; 
+                
+                chrome.runtime.sendMessage({ action: "checkRulesNow" }, async () => {
+                    await renderList();
+                    e.target.disabled = false;
+                });
             }
         };
 
