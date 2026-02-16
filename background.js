@@ -3,90 +3,94 @@ import { updateChromeRules, removeChromeRule, setGlobalBlock } from './js/blocki
 import { isTimeNowInRange } from './js/utils.js';
 
 let isChecking = false;
+let keepAliveInterval = null;
+
+function manageKeepAlive(shouldBeActive) {
+    if (shouldBeActive && !keepAliveInterval) {
+        keepAliveInterval = setInterval(() => {
+            chrome.runtime.getPlatformInfo(() => {}); 
+            console.log("Keep-alive active");
+        }, 20000);
+    } else if (!shouldBeActive && keepAliveInterval) {
+        clearInterval(keepAliveInterval);
+        keepAliveInterval = null;
+    }
+}
 
 async function checkAllRules() {
-    if (isChecking) return; 
+    if (isChecking) return;
     isChecking = true;
 
     try {
-        const isGlobalActive = await StorageManager.getGlobalStatus();
-        const existingRules = await chrome.declarativeNetRequest.getDynamicRules();
-        const existingIds = new Set(existingRules.map(r => r.id));
-        
-        if (isGlobalActive) {
-            if (!existingIds.has(9999)) await setGlobalBlock(true);
-            isChecking = false;
-            return; 
-        } else if (existingIds.has(9999)) {
-            await setGlobalBlock(false);
-            
-        }
-
-        const sites = await StorageManager.getSites();
         const now = Date.now();
-        
-        const idsThatShouldBeActive = new Set();
+        const sites = await StorageManager.getSites();
+        const existingRules = await chrome.declarativeNetRequest.getDynamicRules();
+        const siteMap = new Map();
+        sites.forEach(s => siteMap.set(Math.floor(Number(s.id)), s));
+
+        let nextCheckTime = null;
+        let nearExpiry = false;
+
+        for (const rule of existingRules) {
+            if (rule.id === 9999) continue;
+            const site = siteMap.get(rule.id);
+            
+            let shouldBeDeleted = false;
+            if (!site || site.paused) {
+                shouldBeDeleted = true;
+            } else if (site.type === 'dauer' && site.expiry) {
+                if (now >= site.expiry) {
+                    shouldBeDeleted = true;
+                } else {
+                    if (!nextCheckTime || site.expiry < nextCheckTime) nextCheckTime = site.expiry;
+                    if (site.expiry - now < 60000) nearExpiry = true; // Timer < 1 Min?
+                }
+            } else if (site.type === 'bereich' && !isTimeNowInRange(site.start, site.end)) {
+                shouldBeDeleted = true;
+            }
+
+            if (shouldBeDeleted) await removeChromeRule(rule.id, site?.url);
+        }
 
         for (const site of sites) {
             const sId = Math.floor(Number(site.id));
-            if (isNaN(sId) || sId === 9999) continue;
-
-            let shouldBeBlocked = false;
-
-            if (!site.paused) {
-                if (site.type === 'bereich') {
-                    shouldBeBlocked = isTimeNowInRange(site.start, site.end);
-                } 
-                else if (site.type === 'dauer') {
-                    if (site.dauer > 0) {
-                        shouldBeBlocked = !!(site.expiry && site.expiry > now);
-                    } else {
-                        shouldBeBlocked = true; 
-                    }
-                }
+            if (isNaN(sId) || sId === 9999 || site.paused) continue;
+            
+            let shouldBlock = false;
+            if (site.type === 'bereich') shouldBlock = isTimeNowInRange(site.start, site.end);
+            else if (site.type === 'dauer') {
+                shouldBlock = !!(site.expiry && site.expiry > now);
+                if (shouldBlock && site.expiry - now < 60000) nearExpiry = true;
             }
 
-            if (shouldBeBlocked) {
-                idsThatShouldBeActive.add(sId);
-                if (!existingIds.has(sId)) {
-                    await updateChromeRules(sId, site.url);
-                }
-            }
+            const isAlreadyActive = existingRules.some(r => r.id === sId);
+            if (shouldBlock && !isAlreadyActive) await updateChromeRules(sId, site.url);
         }
-        
-        for (const ruleId of existingIds) {
-            if (ruleId === 9999) continue; 
 
-            if (!idsThatShouldBeActive.has(ruleId)) {
-                console.warn(`Lösche hängende Regel ID: ${ruleId}`);
-                await removeChromeRule(ruleId); 
-            }
+        manageKeepAlive(nearExpiry);
+
+        if (nextCheckTime) {
+            chrome.alarms.create('checkTimeRules', { when: Math.max(now + 1000, nextCheckTime) });
         }
 
     } catch (error) {
-        console.error("Fehler im Background-Check:", error);
+        console.error("Check Error:", error);
     } finally {
         isChecking = false;
     }
 }
 
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+chrome.webNavigation.onBeforeNavigate.addListener((d) => { if (d.frameId === 0) checkAllRules(); });
+chrome.runtime.onMessage.addListener((msg, s, res) => {
     if (msg.action === "checkRulesNow") {
-        checkAllRules().then(() => {
-            if (sendResponse) sendResponse({status: "sync_complete"});
-        });
+        checkAllRules().then(() => res?.({status: "done"}));
         return true; 
     }
 });
 
-chrome.alarms.onAlarm.addListener((alarm) => {
-    if (alarm.name === 'checkTimeRules') checkAllRules();
-});
-
-
-chrome.tabs.onActivated.addListener(() => checkAllRules());
-chrome.windows.onFocusChanged.addListener(() => checkAllRules());
-
+chrome.alarms.onAlarm.addListener(checkAllRules);
+chrome.tabs.onActivated.addListener(checkAllRules);
+chrome.windows.onFocusChanged.addListener(checkAllRules);
 chrome.runtime.onInstalled.addListener(() => {
     chrome.alarms.create('checkTimeRules', { periodInMinutes: 1 });
     checkAllRules();

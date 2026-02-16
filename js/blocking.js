@@ -7,7 +7,6 @@ export async function updateChromeRules(id, url) {
     if (!domain || isNaN(numericId)) return;
 
     try {
-        
         await chrome.declarativeNetRequest.updateDynamicRules({
             removeRuleIds: [numericId], 
             addRules: [{
@@ -22,11 +21,9 @@ export async function updateChromeRules(id, url) {
         });
 
         if (chrome.browsingData) {
-            try {
-                await chrome.browsingData.remove({
-                    "origins": [`https://${domain}`, `http://${domain}`]
-                }, { "serviceWorkers": true, "cacheStorage": true });
-            } catch (e) {}
+            chrome.browsingData.remove({
+                "origins": [`https://${domain}`, `http://${domain}`]
+            }, { "serviceWorkers": true, "cacheStorage": true }).catch(() => {});
         }
 
         const tabs = await chrome.tabs.query({});
@@ -43,37 +40,50 @@ export async function updateChromeRules(id, url) {
 export async function removeChromeRule(id, url = null) {
     const numericId = Math.floor(parseInt(id));
     if (isNaN(numericId)) return;
+
     try {
-        await chrome.declarativeNetRequest.updateDynamicRules({ 
+        const removePromise = chrome.declarativeNetRequest.updateDynamicRules({ 
             removeRuleIds: [numericId] 
         });
 
+        if (!url) {
+            const result = await chrome.storage.local.get(['blockedSites']);
+            const sites = result.blockedSites || [];
+            const site = sites.find(s => Math.floor(Number(s.id)) === numericId);
+            url = site?.url;
+        }
+
+        await removePromise;
+
         if (url) {
-            let domain = url.trim().toLowerCase()
+            const domain = url.trim().toLowerCase()
                 .replace(/^(?:https?:\/\/)?(?:www\.)?/i, "")
                 .split('/')[0];
             
-            if (chrome.browsingData) {
-                await chrome.browsingData.remove({
-                    "origins": [`https://${domain}`, `http://${domain}`]
-                }, { 
-                    "serviceWorkers": true, 
-                    "cacheStorage": true, 
-                    "indexedDB": true 
-                });
-            }
-
             const tabs = await chrome.tabs.query({});
             for (const tab of tabs) {
                 if (tab.url && tab.url.toLowerCase().includes(domain)) {
-                    chrome.tabs.reload(tab.id, { bypassCache: true }).catch(() => {});
+                   
+                    chrome.scripting.executeScript({
+                        target: { tabId: tab.id },
+                        func: () => { window.location.href = window.location.href; }
+                    }).catch(() => {
+                        chrome.tabs.reload(tab.id, { bypassCache: true });
+                    });
                 }
             }
+
+            if (chrome.browsingData) {
+                chrome.browsingData.remove({
+                    "origins": [`https://${domain}`, `http://${domain}`]
+                }, { "serviceWorkers": true, "cacheStorage": true }).catch(() => {});
+            }
         }
-    } catch (e) { 
-        console.error("Fehler beim Entfernen:", e); 
+    } catch (e) {
+        console.error("Fehler beim Entfernen:", e);
     }
 }
+
 
 export async function setGlobalBlock(active) {
     const GLOBAL_ID = 9999;
