@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Focus Shield</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <div class="header-content">
+            <div class="logo-area">
+                <span class="icon logo-icon"></span>
+                <h1>Website Blocker</h1>
+            </div>
+            <div class="header-icons">
+                <span id="themeToggle" class="icon icon-sun" role="button"></span>
+                <span class="icon icon-close" role="button"></span>
+            </div>
+        </div>
+    </header>
+    <div class="header-divider"></div>
+
+    <main>
+        <div class="card-main">
+            <div class="card-text">
+                <h2>Block Browser Completely</h2>
+                <p>Restrict all websites</p>
+            </div>
+            <button class="switch-btn" id="globalSwitch" aria-label="Toggle global block"></button>
+        </div>
+
+        <div class="toggle-container">
+            <button id="btnDauer" class="active" type="button">Duration</button>
+            <button id="btnZeitbereich" type="button">Time Range</button>
+        </div>
+
+        <div class="input-group">
+            <label class="label-text" for="urlInput">Website URL</label>
+            <input type="text" id="urlInput" name="url" placeholder="e.g. facebook">
+        </div>
+        
+        <div id="viewDauer" class="input-group"> 
+            <label class="label-text" for="inputHours">Time Limit</label>
+            <div class="row-inputs"> 
+                <input type="number" id="inputHours" name="hours" placeholder="Hours" min="0">
+                <input type="number" id="inputMinutes" name="minutes" placeholder="Minutes" min="0" max="59">
+            </div>
+        </div>
+
+        <div id="viewZeitbereich" class="input-group" style="display: none;">
+            <label class="label-text" for="startTime">Schedule</label>
+            <div class="row-inputs">
+                <input type="time" id="startTime" name="startTime">
+                <span class="separator">to</span>
+                <input type="time" id="endTime" name="endTime">
+            </div>
+        </div>
+
+        <button id="addBlockBtn" class="btn-primary" type="button">Block Website</button>
+        <button id="cancelEditBtn" class="btn-secondary" type="button" style="display: none;">Cancel</button>
+
+        <div class="list-section">
+            <label class="label-text" for="dummy-search" style="display:none;">Search</label> 
+            <span class="label-text">Blocked Websites</span>
+            <div id="blockList"></div>
+        </div>
+        </div>
+    </main>
+    <script type="module" src="./js/popup.js"></script>
+</body>
+</html>
