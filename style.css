@@ -153,6 +153,36 @@ h1 {
     background-color: var(--muted-foreground);
 }
 
+.icon-github {
+    -webkit-mask-image: url('assets/github.svg');
+    mask-image: url('assets/github.svg');
+    -webkit-mask-size: contain;
+    mask-size: contain;
+    -webkit-mask-position: center;
+    mask-position: center;
+    width: 18px;
+    height: 18px;
+}
+
+#githubbtn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px; 
+    cursor: pointer;
+    overflow: hidden;
+}
+
+#githubbtn .icon {
+    transition: none; 
+    background-color: var(--background); 
+    pointer-events: none; 
+}
+
+#githubbtn:hover .icon {
+    background-color: var(--background);
+}
+
 .card-text h2 { font-size: 0.875rem; font-weight: 600; margin-bottom: 2px; }
 .card-text p { font-size: 0.75rem; color: var(--muted-foreground); }
 
@@ -418,4 +448,8 @@ input::-webkit-calendar-picker-indicator {
   margin-top: 16px; 
 }
 
+footer {
+    padding-top: 16px;
+    margin-top: auto;
+}
 

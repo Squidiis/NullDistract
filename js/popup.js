@@ -44,6 +44,12 @@ async function init() {
 
         document.querySelector('header .icon-close')?.addEventListener('click', () => window.close());
 
+        const githubBtn = document.getElementById('GithubBtn');
+        if (githubBtn) {
+            githubBtn.onclick = () => {
+                chrome.tabs.create({ url: 'https://github.com/Squidiis/NullDistract' });
+            };
+        }
         await renderList();
         setupFormEvents();
 
@@ -159,7 +165,7 @@ async function renderList(isTick = false) {
             chrome.runtime.sendMessage({ action: "checkRulesNow" });
             renderList();
         };
-
+        
         card.querySelector('.btn-edit-item').onclick = () => enterEditMode(site);
         listElement.appendChild(card);
     });
