@@ -1,5 +1,5 @@
 import { StorageManager } from './js/storage.js';
-import { updateChromeRules, removeChromeRule, setGlobalBlock } from './js/blocking.js';
+import { updateChromeRules, removeChromeRule } from './js/blocking.js';
 import { isTimeNowInRange } from './js/utils.js';
 
 let isChecking = false;
@@ -38,12 +38,12 @@ async function checkAllRules() {
             let shouldBeDeleted = false;
             if (!site || site.paused) {
                 shouldBeDeleted = true;
-            } else if (site.type === 'dauer' && site.expiry) {
-                if (now >= site.expiry) {
+            } else if (site.type === 'dauer') {
+                if (site.dauer > 0 && site.expiry && now >= site.expiry) {
                     shouldBeDeleted = true;
-                } else {
+                } else if (site.expiry) {
                     if (!nextCheckTime || site.expiry < nextCheckTime) nextCheckTime = site.expiry;
-                    if (site.expiry - now < 60000) nearExpiry = true; // Timer < 1 Min?
+                    if (site.expiry - now < 60000) nearExpiry = true;
                 }
             } else if (site.type === 'bereich' && !isTimeNowInRange(site.start, site.end)) {
                 shouldBeDeleted = true;
@@ -57,10 +57,15 @@ async function checkAllRules() {
             if (isNaN(sId) || sId === 9999 || site.paused) continue;
             
             let shouldBlock = false;
-            if (site.type === 'bereich') shouldBlock = isTimeNowInRange(site.start, site.end);
-            else if (site.type === 'dauer') {
-                shouldBlock = !!(site.expiry && site.expiry > now);
-                if (shouldBlock && site.expiry - now < 60000) nearExpiry = true;
+            if (site.type === 'bereich') {
+                shouldBlock = isTimeNowInRange(site.start, site.end);
+            } else if (site.type === 'dauer') {
+                if (site.dauer === 0) {
+                    shouldBlock = true;
+                } else {
+                    shouldBlock = !!(site.expiry && site.expiry > now);
+                    if (shouldBlock && site.expiry - now < 60000) nearExpiry = true;
+                }
             }
 
             const isAlreadyActive = existingRules.some(r => r.id === sId);
@@ -68,7 +73,6 @@ async function checkAllRules() {
         }
 
         manageKeepAlive(nearExpiry);
-
         if (nextCheckTime) {
             chrome.alarms.create('checkTimeRules', { when: Math.max(now + 1000, nextCheckTime) });
         }

@@ -16,22 +16,11 @@ export const StorageManager = {
             const index = sites.findIndex(s => parseInt(s.id) === numericId);
             
             if (index !== -1) {
-                const oldSite = sites[index];
-               
-                let updatedData = { ...data, id: numericId };
-                
-                if (oldSite.dauer !== data.dauer) {
-                    updatedData.remainingMinutes = data.dauer;
-                } else {
-                    updatedData.remainingMinutes = oldSite.remainingMinutes;
-                }
-
-                sites[index] = updatedData;
+                sites[index] = { ...sites[index], ...data, id: numericId };
             }
         } 
         else {
             const existingIndex = sites.findIndex(s => s.url === data.url);
-            
             if (existingIndex !== -1) {
                 const existingId = sites[existingIndex].id;
                 sites[existingIndex] = { ...data, id: existingId, paused: false };
@@ -53,8 +42,8 @@ export const StorageManager = {
     },
 
     async getTheme() {
-        const result = await chrome.storage.local.get(['theme']);
-        return result.theme || 'light';
+        const res = await chrome.storage.local.get(['theme']);
+        return res.theme || 'light';
     },
 
     async setTheme(theme) {
@@ -62,8 +51,8 @@ export const StorageManager = {
     },
 
     async getGlobalStatus() {
-        const result = await chrome.storage.local.get(['globalActive']);
-        return result.globalActive || false;
+        const res = await chrome.storage.local.get(['globalActive']);
+        return res.globalActive || false;
     },
 
     async setGlobalStatus(isActive) {
