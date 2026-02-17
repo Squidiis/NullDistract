@@ -1,10 +1,12 @@
 export async function updateChromeRules(id, url) {
     const numericId = Math.floor(parseInt(id));
+    if (isNaN(numericId) || numericId === 9999) return;
+
     let domain = url.trim().toLowerCase()
         .replace(/^(?:https?:\/\/)?(?:www\.)?/i, "")
         .split('/')[0];
 
-    if (!domain || isNaN(numericId)) return;
+    if (!domain) return;
 
     try {
         await chrome.declarativeNetRequest.updateDynamicRules({
@@ -33,7 +35,7 @@ export async function updateChromeRules(id, url) {
             }
         }
     } catch (e) { 
-        console.error("Fehler Blocking:", e); 
+        console.error("Fehler beim Update der Regel:", e); 
     }
 }
 
@@ -42,7 +44,7 @@ export async function removeChromeRule(id, url = null) {
     if (isNaN(numericId)) return;
 
     try {
-        const removePromise = chrome.declarativeNetRequest.updateDynamicRules({ 
+        await chrome.declarativeNetRequest.updateDynamicRules({ 
             removeRuleIds: [numericId] 
         });
 
@@ -53,8 +55,6 @@ export async function removeChromeRule(id, url = null) {
             url = site?.url;
         }
 
-        await removePromise;
-
         if (url) {
             const domain = url.trim().toLowerCase()
                 .replace(/^(?:https?:\/\/)?(?:www\.)?/i, "")
@@ -63,52 +63,46 @@ export async function removeChromeRule(id, url = null) {
             const tabs = await chrome.tabs.query({});
             for (const tab of tabs) {
                 if (tab.url && tab.url.toLowerCase().includes(domain)) {
-                   
-                    chrome.scripting.executeScript({
-                        target: { tabId: tab.id },
-                        func: () => { window.location.href = window.location.href; }
-                    }).catch(() => {
-                        chrome.tabs.reload(tab.id, { bypassCache: true });
-                    });
+                    chrome.tabs.reload(tab.id).catch(() => {});
                 }
-            }
-
-            if (chrome.browsingData) {
-                chrome.browsingData.remove({
-                    "origins": [`https://${domain}`, `http://${domain}`]
-                }, { "serviceWorkers": true, "cacheStorage": true }).catch(() => {});
             }
         }
     } catch (e) {
-        console.error("Fehler beim Entfernen:", e);
+        console.error("Fehler beim Entfernen der Regel:", e);
     }
 }
-
 
 export async function setGlobalBlock(active) {
     const GLOBAL_ID = 9999;
     
     if (active) {
-        await chrome.declarativeNetRequest.updateDynamicRules({
-            removeRuleIds: [GLOBAL_ID],
-            addRules: [{
-                "id": GLOBAL_ID,
-                "priority": 3000,
-                "action": { "type": "block" },
-                "condition": { 
-                    "urlFilter": "*", 
-                    "resourceTypes": ["main_frame", "sub_frame"], 
-                    "excludedDomains": ["google.com", "google.de", "bing.com", "duckduckgo.com"]
-                }
-            }]
-        });
+        try {
+            await chrome.declarativeNetRequest.updateDynamicRules({
+                removeRuleIds: [GLOBAL_ID],
+                addRules: [{
+                    "id": GLOBAL_ID,
+                    "priority": 2000, 
+                    "action": { "type": "block" },
+                    "condition": { 
+                        "urlFilter": "*", 
+                        "resourceTypes": ["main_frame"], 
+                        "excludedDomains": [
+                            "google.com", "google.de", "bing.com", 
+                            "duckduckgo.com", "yahoo.com"
+                        ]
+                    }
+                }]
+            });
 
-        const tabs = await chrome.tabs.query({ url: ["http://*/*", "https://*/*"] }); 
-        for (const tab of tabs) {
-            const isSearch = ["google", "bing", "duckduckgo"].some(s => tab.url.includes(s));
-            if (!isSearch) {
-                chrome.tabs.reload(tab.id, { bypassCache: true }).catch(() => {});
+            const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+            if (activeTab && activeTab.url) {
+                const isSearch = ["google", "bing", "duckduckgo"].some(s => activeTab.url.includes(s));
+                if (!isSearch && activeTab.url.startsWith('http')) {
+                    chrome.tabs.reload(activeTab.id).catch(() => {});
+                }
             }
+        } catch (e) {
+            console.error("Fehler beim Setzen des Global Blocks:", e);
         }
     } else {
         await chrome.declarativeNetRequest.updateDynamicRules({ 
