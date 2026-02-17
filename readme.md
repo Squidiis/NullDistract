@@ -16,7 +16,11 @@ NullDistract is a lightweight, privacy-minded website blocker built for develope
 
 ## Screenshots
 
-Coming soon
+### Light Mode
+![Light Mode](assets/example/light-mode.png)
+
+### Dark Mode
+![Dark Mode](assets/example/dark-mode.png)
 
 ---
 
