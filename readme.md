@@ -7,7 +7,7 @@ NullDistract is a lightweight, privacy-minded website blocker built for develope
 ## Key Features
 
 - **Global Lock:** Temporarily lock browsing across all tabs with a single action to create an uninterrupted focus period.
-- **Session Timer:** Allow limited time on specific sites (e.g., 30 minutes on YouTube). After the timer expires, access is automatically blocked.
+- **Session Timer:** Block a website for a specified duration (e.g., 30 minutes for YouTube). The site is inaccessible during this time and automatically becomes accessible again once the timer expires. If the field is left empty or set to `0`, the website behaves as a simple on/off toggle (fully allowed or fully blocked).
 - **Scheduled Focus Windows:** Define recurring focus periods (for example, 09:00–17:00) during which selected URLs are blocked.
 - **Performance-First Blocking:** Uses Chrome's `declarativeNetRequest` API for efficient, low-overhead request filtering.
 - **Minimal UI:** Clean dark-mode interface designed to surface only the controls you need.
